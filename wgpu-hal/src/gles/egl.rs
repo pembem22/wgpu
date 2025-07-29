@@ -307,15 +307,15 @@ struct EglContext {
 
 impl EglContext {
     fn make_current(&self) {
-        self.instance
-            .make_current(self.display, self.pbuffer, self.pbuffer, Some(self.raw))
-            .unwrap();
+        // self.instance
+        //     .make_current(self.display, self.pbuffer, self.pbuffer, Some(self.raw))
+        //     .unwrap();
     }
 
     fn unmake_current(&self) {
-        self.instance
-            .make_current(self.display, None, None, None)
-            .unwrap();
+        // self.instance
+        //     .make_current(self.display, None, None, None)
+        //     .unwrap();
     }
 }
 
