@@ -1,7 +1,7 @@
 #![allow(clippy::std_instead_of_alloc, clippy::std_instead_of_core)]
 
-pub static mut EGL_DISPLAY: Lazy<Option<khronos_egl::Display>> = Lazy::new(Default::default);
-pub static mut EGL_CONTEXT: Lazy<Option<khronos_egl::Context>> = Lazy::new(Default::default);
+pub static mut EGL_DISPLAY: Option<khronos_egl::Display> = Default::default();
+pub static mut EGL_CONTEXT: Option<khronos_egl::Context> = Default::default();
 
 use std::{
     ffi,
