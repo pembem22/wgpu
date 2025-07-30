@@ -1,8 +1,7 @@
 #![allow(clippy::std_instead_of_alloc, clippy::std_instead_of_core)]
 
-pub static EGL_DISPLAY: LazyLock<Mutex<Option<khronos_egl::Display>>> = LazyLock::new(Default::default);
-pub static EGL_CONTEXT: LazyLock<Mutex<Option<khronos_egl::Context>>> = LazyLock::new(Default::default);
-
+pub static mut EGL_DISPLAY: Lazy<Option<khronos_egl::Display>> = Lazy::new(Default::default);
+pub static mut EGL_CONTEXT: Lazy<Option<khronos_egl::Context>> = Lazy::new(Default::default);
 
 use std::{
     ffi,
@@ -658,7 +657,7 @@ impl Inner {
         gl_context_attributes.extend(&context_attributes);
         gles_context_attributes.extend(&context_attributes);
 
-        let context = EGL_CONTEXT.lock().unwrap();
+        let context = unsafe { EGL_CONTEXT.unwrap() };
         // let context = if supports_opengl {
         //     egl.create_context(display, config, None, &gl_context_attributes)
         //         .or_else(|_| {
@@ -859,7 +858,8 @@ impl crate::Instance for Instance {
         #[cfg(Emscripten)]
         let egl1_5: Option<&Arc<EglInstance>> = Some(&egl);
 
-        let (display, display_owner, wsi_kind) = (EGL_DISPLAY.lock().unwrap(), None, WindowKind::Unknown);
+        let (display, display_owner, wsi_kind) =
+            (unsafe { EGL_DISPLAY.unwrap() }, None, WindowKind::Unknown);
         // let (display, display_owner, wsi_kind) =
         //     if let (Some(library), Some(egl)) = (wayland_library, egl1_5) {
         //         log::info!("Using Wayland platform");
