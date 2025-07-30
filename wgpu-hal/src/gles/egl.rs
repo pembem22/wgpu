@@ -412,11 +412,11 @@ impl<'a> std::ops::Deref for AdapterContextLock<'a> {
 
 impl<'a> Drop for AdapterContextLock<'a> {
     fn drop(&mut self) {
-        if let Some(egl) = self.egl.take() {
-            egl.instance
-                .make_current(egl.display, None, None, None)
-                .unwrap();
-        }
+        // if let Some(egl) = self.egl.take() {
+        //     egl.instance
+        //         .make_current(egl.display, None, None, None)
+        //         .unwrap();
+        // }
     }
 }
 
