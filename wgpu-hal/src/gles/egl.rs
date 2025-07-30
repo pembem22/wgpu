@@ -1,5 +1,9 @@
 #![allow(clippy::std_instead_of_alloc, clippy::std_instead_of_core)]
 
+pub static EGL_DISPLAY: LazyLock<Mutex<Option<khronos_egl::Display>>> = Default::default();
+pub static EGL_CONTEXT: LazyLock<Mutex<Option<khronos_egl::Context>>> = Default::default();
+
+
 use std::{
     ffi,
     mem::ManuallyDrop,
@@ -480,42 +484,42 @@ struct Inner {
 // Different calls to `eglGetPlatformDisplay` may return the same `Display`, making it a global
 // state of all our `EglContext`s. This forces us to track the number of such context to prevent
 // terminating the display if it's currently used by another `EglContext`.
-static DISPLAYS_REFERENCE_COUNT: LazyLock<Mutex<HashMap<usize, usize>>> =
-    LazyLock::new(Default::default);
+// static DISPLAYS_REFERENCE_COUNT: LazyLock<Mutex<HashMap<usize, usize>>> =
+//     LazyLock::new(Default::default);
 
-fn initialize_display(
-    egl: &EglInstance,
-    display: khronos_egl::Display,
-) -> Result<(i32, i32), khronos_egl::Error> {
-    let mut guard = DISPLAYS_REFERENCE_COUNT.lock();
-    *guard.entry(display.as_ptr() as usize).or_default() += 1;
+// fn initialize_display(
+//     egl: &EglInstance,
+//     display: khronos_egl::Display,
+// ) -> Result<(i32, i32), khronos_egl::Error> {
+//     let mut guard = DISPLAYS_REFERENCE_COUNT.lock();
+//     *guard.entry(display.as_ptr() as usize).or_default() += 1;
 
-    // We don't need to check the reference count here since according to the `eglInitialize`
-    // documentation, initializing an already initialized EGL display connection has no effect
-    // besides returning the version numbers.
-    egl.initialize(display)
-}
+//     // We don't need to check the reference count here since according to the `eglInitialize`
+//     // documentation, initializing an already initialized EGL display connection has no effect
+//     // besides returning the version numbers.
+//     egl.initialize(display)
+// }
 
-fn terminate_display(
-    egl: &EglInstance,
-    display: khronos_egl::Display,
-) -> Result<(), khronos_egl::Error> {
-    let key = &(display.as_ptr() as usize);
-    let mut guard = DISPLAYS_REFERENCE_COUNT.lock();
-    let count_ref = guard
-        .get_mut(key)
-        .expect("Attempted to decref a display before incref was called");
+// fn terminate_display(
+//     egl: &EglInstance,
+//     display: khronos_egl::Display,
+// ) -> Result<(), khronos_egl::Error> {
+//     let key = &(display.as_ptr() as usize);
+//     let mut guard = DISPLAYS_REFERENCE_COUNT.lock();
+//     let count_ref = guard
+//         .get_mut(key)
+//         .expect("Attempted to decref a display before incref was called");
 
-    if *count_ref > 1 {
-        *count_ref -= 1;
+//     if *count_ref > 1 {
+//         *count_ref -= 1;
 
-        Ok(())
-    } else {
-        guard.remove(key);
+//         Ok(())
+//     } else {
+//         guard.remove(key);
 
-        egl.terminate(display)
-    }
-}
+//         egl.terminate(display)
+//     }
+// }
 
 impl Inner {
     fn create(
@@ -524,7 +528,7 @@ impl Inner {
         display: khronos_egl::Display,
         force_gles_minor_version: wgt::Gles3MinorVersion,
     ) -> Result<Self, crate::InstanceError> {
-        let version = initialize_display(&egl, display).map_err(|e| {
+        let version = egl.initialize(display).map_err(|e| {
             crate::InstanceError::with_source(
                 String::from("failed to initialize EGL display connection"),
                 e,
@@ -654,27 +658,28 @@ impl Inner {
         gl_context_attributes.extend(&context_attributes);
         gles_context_attributes.extend(&context_attributes);
 
-        let context = if supports_opengl {
-            egl.create_context(display, config, None, &gl_context_attributes)
-                .or_else(|_| {
-                    egl.bind_api(khronos_egl::OPENGL_ES_API).unwrap();
-                    egl.create_context(display, config, None, &gles_context_attributes)
-                })
-                .map_err(|e| {
-                    crate::InstanceError::with_source(
-                        String::from("unable to create OpenGL or GLES 3.x context"),
-                        e,
-                    )
-                })
-        } else {
-            egl.create_context(display, config, None, &gles_context_attributes)
-                .map_err(|e| {
-                    crate::InstanceError::with_source(
-                        String::from("unable to create GLES 3.x context"),
-                        e,
-                    )
-                })
-        }?;
+        let context = EGL_CONTEXT.lock().unwrap();
+        // let context = if supports_opengl {
+        //     egl.create_context(display, config, None, &gl_context_attributes)
+        //         .or_else(|_| {
+        //             egl.bind_api(khronos_egl::OPENGL_ES_API).unwrap();
+        //             egl.create_context(display, config, None, &gles_context_attributes)
+        //         })
+        //         .map_err(|e| {
+        //             crate::InstanceError::with_source(
+        //                 String::from("unable to create OpenGL or GLES 3.x context"),
+        //                 e,
+        //             )
+        //         })
+        // } else {
+        //     egl.create_context(display, config, None, &gles_context_attributes)
+        //         .map_err(|e| {
+        //             crate::InstanceError::with_source(
+        //                 String::from("unable to create GLES 3.x context"),
+        //                 e,
+        //             )
+        //         })
+        // }?;
 
         // Testing if context can be binded without surface
         // and creating dummy pbuffer surface if not.
@@ -722,17 +727,18 @@ impl Inner {
 
 impl Drop for Inner {
     fn drop(&mut self) {
-        if let Err(e) = self
-            .egl
-            .instance
-            .destroy_context(self.egl.display, self.egl.raw)
-        {
-            log::warn!("Error in destroy_context: {:?}", e);
-        }
+        // if let Err(e) = self
+        //     .egl
+        //     .instance
+        //     .destroy_context(self.egl.display, self.egl.raw)
+        // {
+        //     log::warn!("Error in destroy_context: {:?}", e);
+        // }
 
-        if let Err(e) = terminate_display(&self.egl.instance, self.egl.display) {
-            log::warn!("Error in terminate: {:?}", e);
-        }
+        log::warn!("Not destroying context or terminating display");
+        // if let Err(e) = terminate_display(&self.egl.instance, self.egl.display) {
+        //     log::warn!("Error in terminate: {:?}", e);
+        // }
     }
 }
 
@@ -853,68 +859,69 @@ impl crate::Instance for Instance {
         #[cfg(Emscripten)]
         let egl1_5: Option<&Arc<EglInstance>> = Some(&egl);
 
-        let (display, display_owner, wsi_kind) =
-            if let (Some(library), Some(egl)) = (wayland_library, egl1_5) {
-                log::info!("Using Wayland platform");
-                let display_attributes = [khronos_egl::ATTRIB_NONE];
-                let display = unsafe {
-                    egl.get_platform_display(
-                        EGL_PLATFORM_WAYLAND_KHR,
-                        khronos_egl::DEFAULT_DISPLAY,
-                        &display_attributes,
-                    )
-                }
-                .unwrap();
-                (display, Some(Rc::new(library)), WindowKind::Wayland)
-            } else if let (Some(display_owner), Some(egl)) = (x11_display_library, egl1_5) {
-                log::info!("Using X11 platform");
-                let display_attributes = [khronos_egl::ATTRIB_NONE];
-                let display = unsafe {
-                    egl.get_platform_display(
-                        EGL_PLATFORM_X11_KHR,
-                        display_owner.display.as_ptr(),
-                        &display_attributes,
-                    )
-                }
-                .unwrap();
-                (display, Some(Rc::new(display_owner)), WindowKind::X11)
-            } else if let (Some(display_owner), Some(egl)) = (angle_x11_display_library, egl1_5) {
-                log::info!("Using Angle platform with X11");
-                let display_attributes = [
-                    EGL_PLATFORM_ANGLE_NATIVE_PLATFORM_TYPE_ANGLE as khronos_egl::Attrib,
-                    EGL_PLATFORM_X11_KHR as khronos_egl::Attrib,
-                    EGL_PLATFORM_ANGLE_DEBUG_LAYERS_ENABLED as khronos_egl::Attrib,
-                    usize::from(desc.flags.contains(wgt::InstanceFlags::VALIDATION)),
-                    khronos_egl::ATTRIB_NONE,
-                ];
-                let display = unsafe {
-                    egl.get_platform_display(
-                        EGL_PLATFORM_ANGLE_ANGLE,
-                        display_owner.display.as_ptr(),
-                        &display_attributes,
-                    )
-                }
-                .unwrap();
-                (display, Some(Rc::new(display_owner)), WindowKind::AngleX11)
-            } else if client_ext_str.contains("EGL_MESA_platform_surfaceless") {
-                log::warn!("No windowing system present. Using surfaceless platform");
-                #[allow(clippy::unnecessary_literal_unwrap)] // This is only a literal on Emscripten
-                let egl = egl1_5.expect("Failed to get EGL 1.5 for surfaceless");
-                let display = unsafe {
-                    egl.get_platform_display(
-                        EGL_PLATFORM_SURFACELESS_MESA,
-                        khronos_egl::DEFAULT_DISPLAY,
-                        &[khronos_egl::ATTRIB_NONE],
-                    )
-                }
-                .unwrap();
+        let (display, display_owner, wsi_kind) = (EGL_DISPLAY.lock().unwrap(), None, WindowKind::Unknown);
+        // let (display, display_owner, wsi_kind) =
+        //     if let (Some(library), Some(egl)) = (wayland_library, egl1_5) {
+        //         log::info!("Using Wayland platform");
+        //         let display_attributes = [khronos_egl::ATTRIB_NONE];
+        //         let display = unsafe {
+        //             egl.get_platform_display(
+        //                 EGL_PLATFORM_WAYLAND_KHR,
+        //                 khronos_egl::DEFAULT_DISPLAY,
+        //                 &display_attributes,
+        //             )
+        //         }
+        //         .unwrap();
+        //         (display, Some(Rc::new(library)), WindowKind::Wayland)
+        //     } else if let (Some(display_owner), Some(egl)) = (x11_display_library, egl1_5) {
+        //         log::info!("Using X11 platform");
+        //         let display_attributes = [khronos_egl::ATTRIB_NONE];
+        //         let display = unsafe {
+        //             egl.get_platform_display(
+        //                 EGL_PLATFORM_X11_KHR,
+        //                 display_owner.display.as_ptr(),
+        //                 &display_attributes,
+        //             )
+        //         }
+        //         .unwrap();
+        //         (display, Some(Rc::new(display_owner)), WindowKind::X11)
+        //     } else if let (Some(display_owner), Some(egl)) = (angle_x11_display_library, egl1_5) {
+        //         log::info!("Using Angle platform with X11");
+        //         let display_attributes = [
+        //             EGL_PLATFORM_ANGLE_NATIVE_PLATFORM_TYPE_ANGLE as khronos_egl::Attrib,
+        //             EGL_PLATFORM_X11_KHR as khronos_egl::Attrib,
+        //             EGL_PLATFORM_ANGLE_DEBUG_LAYERS_ENABLED as khronos_egl::Attrib,
+        //             usize::from(desc.flags.contains(wgt::InstanceFlags::VALIDATION)),
+        //             khronos_egl::ATTRIB_NONE,
+        //         ];
+        //         let display = unsafe {
+        //             egl.get_platform_display(
+        //                 EGL_PLATFORM_ANGLE_ANGLE,
+        //                 display_owner.display.as_ptr(),
+        //                 &display_attributes,
+        //             )
+        //         }
+        //         .unwrap();
+        //         (display, Some(Rc::new(display_owner)), WindowKind::AngleX11)
+        //     } else if client_ext_str.contains("EGL_MESA_platform_surfaceless") {
+        //         log::warn!("No windowing system present. Using surfaceless platform");
+        //         #[allow(clippy::unnecessary_literal_unwrap)] // This is only a literal on Emscripten
+        //         let egl = egl1_5.expect("Failed to get EGL 1.5 for surfaceless");
+        //         let display = unsafe {
+        //             egl.get_platform_display(
+        //                 EGL_PLATFORM_SURFACELESS_MESA,
+        //                 khronos_egl::DEFAULT_DISPLAY,
+        //                 &[khronos_egl::ATTRIB_NONE],
+        //             )
+        //         }
+        //         .unwrap();
 
-                (display, None, WindowKind::Unknown)
-            } else {
-                log::warn!("EGL_MESA_platform_surfaceless not available. Using default platform");
-                let display = unsafe { egl.get_display(khronos_egl::DEFAULT_DISPLAY) }.unwrap();
-                (display, None, WindowKind::Unknown)
-            };
+        //         (display, None, WindowKind::Unknown)
+        //     } else {
+        //         log::warn!("EGL_MESA_platform_surfaceless not available. Using default platform");
+        //         let display = unsafe { egl.get_display(khronos_egl::DEFAULT_DISPLAY) }.unwrap();
+        //         (display, None, WindowKind::Unknown)
+        //     };
 
         if desc.flags.contains(wgt::InstanceFlags::VALIDATION)
             && client_ext_str.contains("EGL_KHR_debug")
