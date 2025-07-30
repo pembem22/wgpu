@@ -1,7 +1,7 @@
 #![allow(clippy::std_instead_of_alloc, clippy::std_instead_of_core)]
 
-pub static EGL_DISPLAY: LazyLock<Mutex<Option<khronos_egl::Display>>> = Default::default();
-pub static EGL_CONTEXT: LazyLock<Mutex<Option<khronos_egl::Context>>> = Default::default();
+pub static EGL_DISPLAY: LazyLock<Mutex<Option<khronos_egl::Display>>> = LazyLock::new(Default::default);
+pub static EGL_CONTEXT: LazyLock<Mutex<Option<khronos_egl::Context>>> = LazyLock::new(Default::default);
 
 
 use std::{
