@@ -84,6 +84,10 @@ we don't bother with that combination.
 ///cbindgen:ignore
 #[cfg(not(any(windows, webgl)))]
 mod egl;
+#[cfg(not(any(windows, webgl)))]
+pub use egl::EGL_CONTEXT;
+#[cfg(not(any(windows, webgl)))]
+pub use egl::EGL_DISPLAY;
 #[cfg(Emscripten)]
 mod emscripten;
 #[cfg(webgl)]
@@ -97,6 +101,7 @@ mod conv;
 mod device;
 mod fence;
 mod queue;
+
 
 pub use fence::Fence;
 
